@@ -1,0 +1,19 @@
+{
+    "actions": {
+        "acqdatetime": {
+            "filters": {}, 
+            "params": {}
+        }, 
+        "b0_series": {
+            "filters": {}, 
+			"params": {}
+        }
+    }, 
+    "cfgformat": "20220104", 
+    "comments": {
+        "author": "Tim Schakel, UMCU", 
+        "creator": " ", 
+        "description": "Wrapperfile for the MR B0 analysis", 
+        "version": "20220104"
+    }
+}
