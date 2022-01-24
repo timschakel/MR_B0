@@ -7,6 +7,9 @@ Created on Tue Jan  4 09:25:59 2022
 from wad_qc.modulelibs import wadwrapper_lib
 import numpy as np
 import matplotlib.pyplot as plt
+#from wad_qc.modulelibs.pydicom_series import DicomSeries
+#from wad_qc.modulelibs.pydicom_series import ProgressBar
+#from pydicom.sequence import Sequence
 
 def sort_b0_series(dcmInfile):
     # for B0 data, we expect 2 sets of Dicoms, normal Modulus data and the B0 map itself
@@ -15,28 +18,63 @@ def sort_b0_series(dcmInfile):
                  ("0040,9096,0040,9224","0028,1052"), # Real World Value Intercept -> Rescale Intercept
                  ("0040,9096,0040,9225","0028,1053"), # Real World Value Slope -> Rescale Slope
                  ]
-       
-    for series in range(len(dcmInfile)):
-        for i in range(len(dcmInfile[series]._datasets)):
-            if not "RescaleIntercept" in dcmInfile[series]._datasets[i]: # in wrong place define for some MR files
-                dcmInfile[series]._datasets[i].RescaleIntercept = wadwrapper_lib.readDICOMtag(keymapping[0][0],dcmInfile[series],i)
-                dcmInfile[series]._datasets[i].RescaleSlope = wadwrapper_lib.readDICOMtag(keymapping[1][0],dcmInfile[series],i)
-            if dcmInfile[series]._datasets[i].RescaleIntercept == '': # old files use a triple nested private tag
-                dcmInfile[series]._datasets[i].RescaleIntercept = dcmInfile[series]._datasets[i][0x20019000][0][0x20011068][0][0x00281052].value
-            if dcmInfile[series]._datasets[i].RescaleSlope == '': # old files use a triple nested private tag
-                dcmInfile[series]._datasets[i].RescaleSlope = dcmInfile[series]._datasets[i][0x20019000][0][0x20011068][0][0x00281053].value
-        if dcmInfile[series]._datasets[0].ImageType[3] == 'M':
-            dcmInfileM = dcmInfile[series]
-            pixeldataInM = np.transpose(dcmInfile[series].get_pixel_array(),(1,2,0)) #permute for x,y,z matrix shape
-        if dcmInfile[series]._datasets[0].ImageType[3] == 'B0':
-            dcmInfileB0 = dcmInfile[series]
-            pixeldataInB0 = np.transpose(dcmInfile[series].get_pixel_array(),(1,2,0)) #permute for x,y,z matrix shape
+    
+    # find number of series in dcminfile
+    # the M and B0 are usually in different series
+    # but sometimes in a single series...
+    
+    nseries = len(dcmInfile)
+    if nseries > 1:
+        for series in range(len(dcmInfile)):
+            for i in range(len(dcmInfile[series]._datasets)):
+                if not "RescaleIntercept" in dcmInfile[series]._datasets[i]: # in wrong place define for some MR files
+                    dcmInfile[series]._datasets[i].RescaleIntercept = wadwrapper_lib.readDICOMtag(keymapping[0][0],dcmInfile[series],i)
+                    dcmInfile[series]._datasets[i].RescaleSlope = wadwrapper_lib.readDICOMtag(keymapping[1][0],dcmInfile[series],i)
+                if dcmInfile[series]._datasets[i].RescaleIntercept == '': # old files use a triple nested private tag
+                    dcmInfile[series]._datasets[i].RescaleIntercept = dcmInfile[series]._datasets[i][0x20019000][0][0x20011068][0][0x00281052].value
+                if dcmInfile[series]._datasets[i].RescaleSlope == '': # old files use a triple nested private tag
+                    dcmInfile[series]._datasets[i].RescaleSlope = dcmInfile[series]._datasets[i][0x20019000][0][0x20011068][0][0x00281053].value
+            if dcmInfile[series]._datasets[0].ImageType[3] == 'M':
+                print('[MRB0_lib] Found M data.')
+                #dcmInfileM = dcmInfile[series]
+                pixeldataInM = np.transpose(dcmInfile[series].get_pixel_array(),(1,2,0)) #permute for x,y,z matrix shape
+            if dcmInfile[series]._datasets[0].ImageType[3] == 'B0':
+                print('[MRB0_lib] Found B0 data.')
+                #dcmInfileB0 = dcmInfile[series]
+                pixeldataInB0 = np.transpose(dcmInfile[series].get_pixel_array(),(1,2,0)) #permute for x,y,z matrix shape
+    elif nseries == 1:
+
+        for i in range(len(dcmInfile[0]._datasets)):
+            if not "RescaleIntercept" in dcmInfile[0]._datasets[i]: # in wrong place define for some MR files
+                dcmInfile[0]._datasets[i].RescaleIntercept = wadwrapper_lib.readDICOMtag(keymapping[0][0],dcmInfile[0],i)
+                dcmInfile[0]._datasets[i].RescaleSlope = wadwrapper_lib.readDICOMtag(keymapping[1][0],dcmInfile[0],i)
+            if dcmInfile[0]._datasets[i].RescaleIntercept == '': # old files use a triple nested private tag
+                dcmInfile[0]._datasets[i].RescaleIntercept = dcmInfile[0]._datasets[i][0x20019000][0][0x20011068][0][0x00281052].value
+            if dcmInfile[0]._datasets[i].RescaleSlope == '': # old files use a triple nested private tag
+                dcmInfile[0]._datasets[i].RescaleSlope = dcmInfile[0]._datasets[i][0x20019000][0][0x20011068][0][0x00281053].value
         
-    #error if no B0 was found
-    if 'dcmInfileB0' or 'pixeldataInB0' not in locals():
-        raise Exception('[MRB0_sort_b0_series] No B0 data found!')
-        
-    return dcmInfileM, pixeldataInM, dcmInfileB0, pixeldataInB0
+        pixeldataIn = np.transpose(dcmInfile[0].get_pixel_array(),(1,2,0)) #permute for x,y,z matrix shape      
+        nslices = dcmInfile[0]._datasets[0][0x20011018].value
+        midx = np.zeros(nslices,dtype=int)
+        b0idx = np.zeros(nslices,dtype=int)       
+        mcnt = 0
+        b0cnt = 0
+        for i in range(len(dcmInfile[0]._datasets)):
+            if dcmInfile[0]._datasets[i].ImageType[3] == 'M':
+                print('[MRB0_lib] Found M data.')
+                midx[mcnt] = i
+                mcnt = mcnt + 1
+            if dcmInfile[0]._datasets[i].ImageType[3] == 'B0':
+                print('[MRB0_lib] Found B0 data.')
+                b0idx[b0cnt] = i
+                b0cnt = b0cnt + 1
+ 
+        pixeldataInM = pixeldataIn[:,:,midx]
+        pixeldataInB0 = pixeldataIn[:,:,b0idx]             
+    else:
+        raise Exception('[MRB0_sort_b0_series] No series found!')
+                
+    return dcmInfile, pixeldataInM, pixeldataInB0
 
 
 def create_spherical_mask(shape, voxel_spacing=(1.0,1.0,1.0), center=None, radius=None):

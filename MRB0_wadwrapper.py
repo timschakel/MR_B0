@@ -68,10 +68,11 @@ def b0_series(data, results, action):
     
     # load the data
     dcmInfile = dcmseries.read_files(data.series_filelist[0], True, readPixelData=False, splitOnPosition=True)
-    dcmInfileM, pixeldataInM, dcmInfileB0, pixeldataInB0 = B0.sort_b0_series(dcmInfile)
+    print('[MRB0] Found '+str(len(data.series_filelist[0]))+' files. Attempting to sort in M and B0')
+    dcmInfile, pixeldataInM, pixeldataInB0 = B0.sort_b0_series(dcmInfile)
     
     # get the orientation
-    seriesname = dcmInfileM.info.SeriesDescription
+    seriesname = dcmInfile[0].info.SeriesDescription
     if seriesname.startswith('t'):
         scanori = 'TRANSVERSAL'
     elif seriesname.startswith('c'):
@@ -82,22 +83,22 @@ def b0_series(data, results, action):
         scanori = 'UNKNOWN'
         
     # do some bookkeeping
-    imaging_frequency = dcmInfileM.info.ImagingFrequency
+    imaging_frequency = dcmInfile[0].info.ImagingFrequency
     pixeldataInB0ppm = pixeldataInB0/imaging_frequency
     
     # define volumes for statistics
     # Load dimensions based on the number of rows, columns, and slices (along the Z axis)
-    pixelDims = (int(dcmInfileB0.info.Rows), int(dcmInfileB0.info.Columns), len(dcmInfileB0._datasets))
+    pixelDims = (int(dcmInfile[0].info.Rows), int(dcmInfile[0].info.Columns), dcmInfile[0].info[0x20011018].value)
     
     # Load spacing values (in mm)
-    gap = float(dcmInfileB0.info.SpacingBetweenSlices)
-    pixelSpacing = (float(dcmInfileB0.info.PixelSpacing[0]), float(dcmInfileB0.info.PixelSpacing[1]),float(dcmInfileB0.info.SliceThickness)+gap)
+    gap = float(dcmInfile[0].info.SpacingBetweenSlices)
+    pixelSpacing = (float(dcmInfile[0].info.PixelSpacing[0]), float(dcmInfile[0].info.PixelSpacing[1]),float(dcmInfile[0].info.SliceThickness)+gap)
     
     # find pixel coords of geometric center (0,0)
     # ImagePositionPatient gives the x,y,z coordinates of the center of the pixel in the upper lefthand corner
-    x0 = np.round((0 - dcmInfileB0.info.ImagePositionPatient[0] + (pixelSpacing[0] / 2) ) / pixelSpacing[0])
-    y0 = np.round((0 - dcmInfileB0.info.ImagePositionPatient[1] + (pixelSpacing[1] / 2) ) / pixelSpacing[1])
-    z0 = np.round((0 - dcmInfileB0.info.ImagePositionPatient[2] + (pixelSpacing[2] / 2) ) / pixelSpacing[2])
+    x0 = np.round((0 - dcmInfile[0].info.ImagePositionPatient[0] + (pixelSpacing[0] / 2) ) / pixelSpacing[0])
+    y0 = np.round((0 - dcmInfile[0].info.ImagePositionPatient[1] + (pixelSpacing[1] / 2) ) / pixelSpacing[1])
+    z0 = np.round((0 - dcmInfile[0].info.ImagePositionPatient[2] + (pixelSpacing[2] / 2) ) / pixelSpacing[2])
     
     # define the masks for DSVs
     dsv100 = B0.create_spherical_mask(pixeldataInB0ppm.shape,voxel_spacing=(pixelSpacing[0],pixelSpacing[1],pixelSpacing[2]), center=(x0,y0,z0), radius=50)
@@ -116,8 +117,8 @@ def b0_series(data, results, action):
     perc_stats = B0.calc_percentile_stats(pixeldataInB0ppm,phantom)
     
     # create figures
-    acqdate = dcmInfileM.info.StudyDate
-    acqtime = dcmInfileM.info.StudyTime
+    acqdate = dcmInfile[0].info.StudyDate
+    acqtime = dcmInfile[0].info.StudyTime
     fname_fig1 = B0.create_figure1(pixeldataInB0, phantom, acqdate, acqtime, scanori)
     fname_fig2 = B0.create_figure2(pixeldataInB0ppm,pixeldataInB0,phantom,dsv100,dsv200,dsv300,
                                    dsv350,acqdate,acqtime,imaging_frequency, scanori)
@@ -135,28 +136,28 @@ def b0_series(data, results, action):
         # results for the different slices
         idname = "_slice"+str(slice+1)
         
-        reportkeyvals.append( ("rms ppm d10"+idname,rms_dsv100[slice]) )
-        reportkeyvals.append( ("rms ppm d20"+idname,rms_dsv200[slice]) )
-        reportkeyvals.append( ("rms ppm d30"+idname,rms_dsv300[slice]) )
-        reportkeyvals.append( ("rms ppm d35"+idname,rms_dsv350[slice]) )
+        reportkeyvals.append( ("RMS d10"+idname,rms_dsv100[slice]) )
+        reportkeyvals.append( ("RMS d20"+idname,rms_dsv200[slice]) )
+        reportkeyvals.append( ("RMS d30"+idname,rms_dsv300[slice]) )
+        reportkeyvals.append( ("RMS d35"+idname,rms_dsv350[slice]) )
         
-        reportkeyvals.append( ("p5 ppm"+idname,perc_stats[slice,0]) )
-        reportkeyvals.append( ("p25 ppm"+idname,perc_stats[slice,1]) )
-        reportkeyvals.append( ("p50 ppm"+idname,perc_stats[slice,2]) )
-        reportkeyvals.append( ("p75 ppm"+idname,perc_stats[slice,3]) )
-        reportkeyvals.append( ("p95 ppm"+idname,perc_stats[slice,4]) )
+        reportkeyvals.append( ("p5 "+idname,perc_stats[slice,0]) )
+        reportkeyvals.append( ("p25 "+idname,perc_stats[slice,1]) )
+        reportkeyvals.append( ("p50 "+idname,perc_stats[slice,2]) )
+        reportkeyvals.append( ("p75 "+idname,perc_stats[slice,3]) )
+        reportkeyvals.append( ("p95 "+idname,perc_stats[slice,4]) )
     
     #whole phantom results
-    reportkeyvals.append( ("rms ppm d10_phantom",rms_dsv100[pixelDims[2]]) )
-    reportkeyvals.append( ("rms ppm d20_phantom",rms_dsv200[pixelDims[2]]) )
-    reportkeyvals.append( ("rms ppm d30_phantom",rms_dsv300[pixelDims[2]]) )
-    reportkeyvals.append( ("rms ppm d35_phantom",rms_dsv350[pixelDims[2]]) )
+    reportkeyvals.append( ("RMS d10_phantom",rms_dsv100[pixelDims[2]]) )
+    reportkeyvals.append( ("RMS d20_phantom",rms_dsv200[pixelDims[2]]) )
+    reportkeyvals.append( ("RMS d30_phantom",rms_dsv300[pixelDims[2]]) )
+    reportkeyvals.append( ("RMS d35_phantom",rms_dsv350[pixelDims[2]]) )
     
-    reportkeyvals.append( ("p5 ppm_phantom",perc_stats[pixelDims[2],0]) )
-    reportkeyvals.append( ("p25 ppm_phantom",perc_stats[pixelDims[2],1]) )
-    reportkeyvals.append( ("p50 ppm_phantom",perc_stats[pixelDims[2],2]) )
-    reportkeyvals.append( ("p75 ppm_phantom",perc_stats[pixelDims[2],3]) )
-    reportkeyvals.append( ("p95 ppm_phantom",perc_stats[pixelDims[2],4]) )
+    reportkeyvals.append( ("p5 phantom",perc_stats[pixelDims[2],0]) )
+    reportkeyvals.append( ("p25 phantom",perc_stats[pixelDims[2],1]) )
+    reportkeyvals.append( ("p50 phantom",perc_stats[pixelDims[2],2]) )
+    reportkeyvals.append( ("p75 phantom",perc_stats[pixelDims[2],3]) )
+    reportkeyvals.append( ("p95 phantom",perc_stats[pixelDims[2],4]) )
     
     for key,val in reportkeyvals:
         results.addFloat(key, val)
